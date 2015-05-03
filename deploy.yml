@@ -1,0 +1,44 @@
+---
+- hosts: all
+  sudo: true
+  tasks:
+  - name: Create release name
+    shell: date +%Y%m%d%H%M%S
+    register: release_name
+
+  - name: Set the project directory
+    set_fact: project_dir="/var/www/project/current"
+
+  - name: Store the release name
+    set_fact: release_name="{{release_name.stdout}}"
+
+  - name: Store the release directory
+    set_fact: release_dir="/var/www/project/release/{{release_name}}/"
+
+  - name: Create new revision directory
+    file: path="{{release_dir}}" state=directory
+
+  - name: Git clone new code
+    git: repo=https://github.com/kimausloos/example-symfony-application.git dest="{{release_dir}}" accept_hostkey=yes
+
+  - name: Run composer install
+    shell: composer install chdir="{{release_dir}}"
+
+  - name: Dump assets
+    shell: app/console assetic:dump --env=prod chdir="{{release_dir}}"
+
+  - name: Install assets
+    shell: app/console assets:install web --env=prod chdir="{{release_dir}}"
+
+  - name: Fix cache permissions
+    file: path="{{release_dir}}app/cache/" mode=0777 recurse=yes owner=www-data group=www-data
+
+  - name: Fix logs permissions
+    file: path="{{release_dir}}app/logs/" mode=0777 recurse=yes owner=www-data group=www-data
+
+  - name: Symlink new release
+    file: src="{{release_dir}}" path="{{project_dir}}" state=link
+
+  - name: Restart php-fpm
+    sudo: yes
+    command: service php5-fpm restart
